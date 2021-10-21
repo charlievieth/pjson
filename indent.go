@@ -39,8 +39,8 @@ func compact(dst *bytes.Buffer, src []byte, escape bool) error {
 			start = i + 3
 		}
 		v := scan.step(scan, c)
-		if v >= scanSkipSpace {
-			if v == scanError {
+		if v >= ScanSkipSpace {
+			if v == ScanError {
 				break
 			}
 			if start < i {
@@ -49,7 +49,7 @@ func compact(dst *bytes.Buffer, src []byte, escape bool) error {
 			start = i + 1
 		}
 	}
-	if scan.eof() == scanError {
+	if scan.EOF() == ScanError {
 		dst.Truncate(origLen)
 		return scan.err
 	}
@@ -87,13 +87,13 @@ func Indent(dst *bytes.Buffer, src []byte, prefix, indent string) error {
 	for _, c := range src {
 		scan.bytes++
 		v := scan.step(scan, c)
-		if v == scanSkipSpace {
+		if v == ScanSkipSpace {
 			continue
 		}
-		if v == scanError {
+		if v == ScanError {
 			break
 		}
-		if needIndent && v != scanEndObject && v != scanEndArray {
+		if needIndent && v != ScanEndObject && v != ScanEndArray {
 			needIndent = false
 			depth++
 			newline(dst, prefix, indent, depth)
@@ -101,7 +101,7 @@ func Indent(dst *bytes.Buffer, src []byte, prefix, indent string) error {
 
 		// Emit semantically uninteresting bytes
 		// (in particular, punctuation in strings) unmodified.
-		if v == scanContinue {
+		if v == ScanContinue {
 			dst.WriteByte(c)
 			continue
 		}
@@ -135,7 +135,7 @@ func Indent(dst *bytes.Buffer, src []byte, prefix, indent string) error {
 			dst.WriteByte(c)
 		}
 	}
-	if scan.eof() == scanError {
+	if scan.EOF() == ScanError {
 		dst.Truncate(origLen)
 		return scan.err
 	}

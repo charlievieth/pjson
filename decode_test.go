@@ -1090,7 +1090,7 @@ func equalError(a, b error) bool {
 
 func TestUnmarshal(t *testing.T) {
 	for i, tt := range unmarshalTests {
-		var scan scanner
+		var scan Scanner
 		in := []byte(tt.in)
 		if err := checkValid(in, &scan); err != nil {
 			if !equalError(err, tt.err) {

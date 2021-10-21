@@ -17,7 +17,7 @@ type Decoder struct {
 	d       decodeState
 	scanp   int   // start of unread data in buf
 	scanned int64 // amount of data already scanned
-	scan    scanner
+	scan    Scanner
 	err     error
 
 	tokenState int
@@ -101,21 +101,21 @@ Input:
 			c := dec.buf[scanp]
 			dec.scan.bytes++
 			switch dec.scan.step(&dec.scan, c) {
-			case scanEnd:
+			case ScanEnd:
 				// scanEnd is delayed one byte so we decrement
 				// the scanner bytes count by 1 to ensure that
 				// this value is correct in the next call of Decode.
 				dec.scan.bytes--
 				break Input
-			case scanEndObject, scanEndArray:
+			case ScanEndObject, ScanEndArray:
 				// scanEnd is delayed one byte.
 				// We might block trying to get that byte from src,
 				// so instead invent a space byte.
-				if stateEndValue(&dec.scan, ' ') == scanEnd {
+				if stateEndValue(&dec.scan, ' ') == ScanEnd {
 					scanp++
 					break Input
 				}
-			case scanError:
+			case ScanError:
 				dec.err = dec.scan.err
 				return 0, dec.scan.err
 			}
@@ -125,7 +125,7 @@ Input:
 		// Delayed until now to allow buffer scan.
 		if err != nil {
 			if err == io.EOF {
-				if dec.scan.step(&dec.scan, ' ') == scanEnd {
+				if dec.scan.step(&dec.scan, ' ') == ScanEnd {
 					break Input
 				}
 				if nonSpace(dec.buf) {

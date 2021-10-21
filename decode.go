@@ -174,7 +174,7 @@ func (d *decodeState) unmarshal(v interface{}) error {
 	}
 
 	d.scan.reset()
-	d.scanWhile(scanSkipSpace)
+	d.scanWhile(ScanSkipSpace)
 	// We decode rv not rv.Elem because the Unmarshaler interface
 	// test must be applied at the top level of the value.
 	err := d.value(rv)
@@ -211,7 +211,7 @@ type decodeState struct {
 	data                  []byte
 	off                   int // next read offset in data
 	opcode                int // last read result
-	scan                  scanner
+	scan                  Scanner
 	errorContext          *errorContext
 	savedError            error
 	useNumber             bool
@@ -281,7 +281,7 @@ func (d *decodeState) scanNext() {
 		d.opcode = d.scan.step(&d.scan, d.data[d.off])
 		d.off++
 	} else {
-		d.opcode = d.scan.eof()
+		d.opcode = d.scan.EOF()
 		d.off = len(d.data) + 1 // mark processed EOF with len+1
 	}
 }
@@ -301,7 +301,7 @@ func (d *decodeState) scanWhile(op int) {
 	}
 
 	d.off = len(data) + 1 // mark processed EOF with len+1
-	d.opcode = d.scan.eof()
+	d.opcode = d.scan.EOF()
 }
 
 // rescanLiteral is similar to scanWhile(scanContinue), but it specialises the
@@ -345,7 +345,7 @@ Switch:
 	if i < len(data) {
 		d.opcode = stateEndValue(&d.scan, data[i])
 	} else {
-		d.opcode = scanEnd
+		d.opcode = ScanEnd
 	}
 	d.off = i + 1
 }
@@ -358,7 +358,7 @@ func (d *decodeState) value(v reflect.Value) error {
 	default:
 		panic(phasePanicMsg)
 
-	case scanBeginArray:
+	case ScanBeginArray:
 		if v.IsValid() {
 			if err := d.array(v); err != nil {
 				return err
@@ -368,7 +368,7 @@ func (d *decodeState) value(v reflect.Value) error {
 		}
 		d.scanNext()
 
-	case scanBeginObject:
+	case ScanBeginObject:
 		if v.IsValid() {
 			if err := d.object(v); err != nil {
 				return err
@@ -378,7 +378,7 @@ func (d *decodeState) value(v reflect.Value) error {
 		}
 		d.scanNext()
 
-	case scanBeginLiteral:
+	case ScanBeginLiteral:
 		// All bytes inside literal return scanContinue op code.
 		start := d.readIndex()
 		d.rescanLiteral()
@@ -403,11 +403,11 @@ func (d *decodeState) valueQuoted() interface{} {
 	default:
 		panic(phasePanicMsg)
 
-	case scanBeginArray, scanBeginObject:
+	case ScanBeginArray, ScanBeginObject:
 		d.skip()
 		d.scanNext()
 
-	case scanBeginLiteral:
+	case ScanBeginLiteral:
 		v := d.literalInterface()
 		switch v.(type) {
 		case nil, string:
@@ -534,8 +534,8 @@ func (d *decodeState) array(v reflect.Value) error {
 	i := 0
 	for {
 		// Look ahead for ] - can only happen on first iteration.
-		d.scanWhile(scanSkipSpace)
-		if d.opcode == scanEndArray {
+		d.scanWhile(ScanSkipSpace)
+		if d.opcode == ScanEndArray {
 			break
 		}
 
@@ -570,13 +570,13 @@ func (d *decodeState) array(v reflect.Value) error {
 		i++
 
 		// Next token must be , or ].
-		if d.opcode == scanSkipSpace {
-			d.scanWhile(scanSkipSpace)
+		if d.opcode == ScanSkipSpace {
+			d.scanWhile(ScanSkipSpace)
 		}
-		if d.opcode == scanEndArray {
+		if d.opcode == ScanEndArray {
 			break
 		}
-		if d.opcode != scanArrayValue {
+		if d.opcode != ScanArrayValue {
 			panic(phasePanicMsg)
 		}
 	}
@@ -667,12 +667,12 @@ func (d *decodeState) object(v reflect.Value) error {
 
 	for {
 		// Read opening " of string key or closing }.
-		d.scanWhile(scanSkipSpace)
-		if d.opcode == scanEndObject {
+		d.scanWhile(ScanSkipSpace)
+		if d.opcode == ScanEndObject {
 			// closing } - can only happen on first iteration.
 			break
 		}
-		if d.opcode != scanBeginLiteral {
+		if d.opcode != ScanBeginLiteral {
 			panic(phasePanicMsg)
 		}
 
@@ -749,13 +749,13 @@ func (d *decodeState) object(v reflect.Value) error {
 		}
 
 		// Read : before value.
-		if d.opcode == scanSkipSpace {
-			d.scanWhile(scanSkipSpace)
+		if d.opcode == ScanSkipSpace {
+			d.scanWhile(ScanSkipSpace)
 		}
-		if d.opcode != scanObjectKey {
+		if d.opcode != ScanObjectKey {
 			panic(phasePanicMsg)
 		}
-		d.scanWhile(scanSkipSpace)
+		d.scanWhile(ScanSkipSpace)
 
 		if destring {
 			switch qv := d.valueQuoted().(type) {
@@ -818,8 +818,8 @@ func (d *decodeState) object(v reflect.Value) error {
 		}
 
 		// Next token must be , or }.
-		if d.opcode == scanSkipSpace {
-			d.scanWhile(scanSkipSpace)
+		if d.opcode == ScanSkipSpace {
+			d.scanWhile(ScanSkipSpace)
 		}
 		if d.errorContext != nil {
 			// Reset errorContext to its original state.
@@ -828,10 +828,10 @@ func (d *decodeState) object(v reflect.Value) error {
 			d.errorContext.FieldStack = d.errorContext.FieldStack[:len(origErrorContext.FieldStack)]
 			d.errorContext.Struct = origErrorContext.Struct
 		}
-		if d.opcode == scanEndObject {
+		if d.opcode == ScanEndObject {
 			break
 		}
-		if d.opcode != scanObjectValue {
+		if d.opcode != ScanObjectValue {
 			panic(phasePanicMsg)
 		}
 	}
@@ -1041,13 +1041,13 @@ func (d *decodeState) valueInterface() (val interface{}) {
 	switch d.opcode {
 	default:
 		panic(phasePanicMsg)
-	case scanBeginArray:
+	case ScanBeginArray:
 		val = d.arrayInterface()
 		d.scanNext()
-	case scanBeginObject:
+	case ScanBeginObject:
 		val = d.objectInterface()
 		d.scanNext()
-	case scanBeginLiteral:
+	case ScanBeginLiteral:
 		val = d.literalInterface()
 	}
 	return
@@ -1058,21 +1058,21 @@ func (d *decodeState) arrayInterface() []interface{} {
 	var v = make([]interface{}, 0)
 	for {
 		// Look ahead for ] - can only happen on first iteration.
-		d.scanWhile(scanSkipSpace)
-		if d.opcode == scanEndArray {
+		d.scanWhile(ScanSkipSpace)
+		if d.opcode == ScanEndArray {
 			break
 		}
 
 		v = append(v, d.valueInterface())
 
 		// Next token must be , or ].
-		if d.opcode == scanSkipSpace {
-			d.scanWhile(scanSkipSpace)
+		if d.opcode == ScanSkipSpace {
+			d.scanWhile(ScanSkipSpace)
 		}
-		if d.opcode == scanEndArray {
+		if d.opcode == ScanEndArray {
 			break
 		}
-		if d.opcode != scanArrayValue {
+		if d.opcode != ScanArrayValue {
 			panic(phasePanicMsg)
 		}
 	}
@@ -1084,12 +1084,12 @@ func (d *decodeState) objectInterface() map[string]interface{} {
 	m := make(map[string]interface{})
 	for {
 		// Read opening " of string key or closing }.
-		d.scanWhile(scanSkipSpace)
-		if d.opcode == scanEndObject {
+		d.scanWhile(ScanSkipSpace)
+		if d.opcode == ScanEndObject {
 			// closing } - can only happen on first iteration.
 			break
 		}
-		if d.opcode != scanBeginLiteral {
+		if d.opcode != ScanBeginLiteral {
 			panic(phasePanicMsg)
 		}
 
@@ -1103,25 +1103,25 @@ func (d *decodeState) objectInterface() map[string]interface{} {
 		}
 
 		// Read : before value.
-		if d.opcode == scanSkipSpace {
-			d.scanWhile(scanSkipSpace)
+		if d.opcode == ScanSkipSpace {
+			d.scanWhile(ScanSkipSpace)
 		}
-		if d.opcode != scanObjectKey {
+		if d.opcode != ScanObjectKey {
 			panic(phasePanicMsg)
 		}
-		d.scanWhile(scanSkipSpace)
+		d.scanWhile(ScanSkipSpace)
 
 		// Read value.
 		m[key] = d.valueInterface()
 
 		// Next token must be , or }.
-		if d.opcode == scanSkipSpace {
-			d.scanWhile(scanSkipSpace)
+		if d.opcode == ScanSkipSpace {
+			d.scanWhile(ScanSkipSpace)
 		}
-		if d.opcode == scanEndObject {
+		if d.opcode == ScanEndObject {
 			break
 		}
-		if d.opcode != scanObjectValue {
+		if d.opcode != ScanObjectValue {
 			panic(phasePanicMsg)
 		}
 	}
