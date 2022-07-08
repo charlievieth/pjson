@@ -173,7 +173,7 @@ func (d *decodeState) unmarshal(v interface{}) error {
 		return &InvalidUnmarshalError{reflect.TypeOf(v)}
 	}
 
-	d.scan.reset()
+	d.scan.Reset()
 	d.scanWhile(ScanSkipSpace)
 	// We decode rv not rv.Elem because the Unmarshaler interface
 	// test must be applied at the top level of the value.

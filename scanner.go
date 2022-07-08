@@ -28,7 +28,7 @@ func Valid(data []byte) bool {
 // checkValid verifies that data is valid JSON-encoded data.
 // scan is passed in for use by checkValid to avoid an allocation.
 func checkValid(data []byte, scan *Scanner) error {
-	scan.reset()
+	scan.Reset()
 	for _, c := range data {
 		scan.bytes++
 		if scan.step(scan, c) == ScanError {
@@ -72,7 +72,7 @@ type Scanner struct {
 	endTop bool
 
 	// Stack of what we're in the middle of - array values, object keys, object values.
-	parseState []int
+	parseState []ParseState
 
 	// Error that happened, if any.
 	err error
@@ -81,6 +81,28 @@ type Scanner struct {
 	// not set to zero by scan.reset)
 	bytes int64
 }
+
+////////////////////////////////////////////////////////////////////////////////
+
+func (s *Scanner) Err() error               { return s.err }
+func (s *Scanner) EndTop() bool             { return s.endTop }
+func (s *Scanner) Bytes() int64             { return s.bytes }
+func (s *Scanner) ParseState() []ParseState { return s.parseState }
+
+// TODO: need a Step() that does not increment Scanner.bytes
+func (s *Scanner) Step(c byte) int {
+	s.bytes++
+	return s.step(s, c)
+}
+
+func (s *Scanner) CurrentParseState() ParseState {
+	if n := len(s.parseState) - 1; n >= 0 {
+		return s.parseState[n]
+	}
+	return -1
+}
+
+////////////////////////////////////////////////////////////////////////////////
 
 var scannerPool = sync.Pool{
 	New: func() interface{} {
@@ -92,7 +114,7 @@ func newScanner() *Scanner {
 	scan := scannerPool.Get().(*Scanner)
 	// scan.reset by design doesn't set bytes to zero
 	scan.bytes = 0
-	scan.reset()
+	scan.Reset()
 	return scan
 }
 
@@ -102,6 +124,40 @@ func freeScanner(scan *Scanner) {
 		scan.parseState = nil
 	}
 	scannerPool.Put(scan)
+}
+
+// WARN: use or remove
+type ScanState int8
+
+// WARN: use or remove
+var scanStateStrs = [...]string{
+	"ScanContinue",
+	"ScanBeginLiteral",
+	"ScanBeginObject",
+	"ScanObjectKey",
+	"ScanObjectValue",
+	"ScanEndObject",
+	"ScanBeginArray",
+	"ScanArrayValue",
+	"ScanEndArray",
+	"ScanSkipSpace",
+	"ScanEnd",
+	"ScanError",
+}
+
+// WARN: use or remove
+func (s ScanState) String() string {
+	if uint(s) < uint(len(scanStateStrs)) {
+		return scanStateStrs[s]
+	}
+	return "ScanState(" + strconv.Itoa(int(s)) + ")"
+}
+
+func ScanStateString(state int) string {
+	if state < len(scanStateStrs) {
+		return ScanState(state).String()
+	}
+	return "ScanState(" + strconv.Itoa(state) + ")"
 }
 
 // These values are returned by the state transition functions
@@ -129,23 +185,41 @@ const (
 	ScanError // hit an error, scanner.err.
 )
 
+// WARN: use or remove
+type ParseState int8
+
+// WARN: use or remove
+var parseStateStrs = [...]string{
+	"ParseObjectKey",
+	"ParseObjectValue",
+	"ParseArrayValue",
+}
+
+// WARN: use or remove
+func (s ParseState) String() string {
+	if uint(s) < uint(len(parseStateStrs)) {
+		return parseStateStrs[s]
+	}
+	return "ParseState(" + strconv.Itoa(int(s)) + ")"
+}
+
 // These values are stored in the parseState stack.
 // They give the current state of a composite value
 // being scanned. If the parser is inside a nested value
 // the parseState describes the nested state, outermost at entry 0.
 const (
-	ParseObjectKey   = iota // parsing object key (before colon)
-	ParseObjectValue        // parsing object value (after colon)
-	ParseArrayValue         // parsing array value
+	ParseObjectKey   ParseState = iota // parsing object key (before colon)
+	ParseObjectValue                   // parsing object value (after colon)
+	ParseArrayValue                    // parsing array value
 )
 
 // This limits the max nesting depth to prevent stack overflow.
 // This is permitted by https://tools.ietf.org/html/rfc7159#section-9
 const maxNestingDepth = 10000
 
-// reset prepares the scanner for use.
-// It must be called before calling s.step.
-func (s *Scanner) reset() {
+// Reset prepares the scanner for use.
+// It must be called before calling s.Step.
+func (s *Scanner) Reset() {
 	s.step = stateBeginValue
 	s.parseState = s.parseState[0:0]
 	s.err = nil
@@ -173,7 +247,7 @@ func (s *Scanner) EOF() int {
 
 // pushParseState pushes a new parse state p onto the parse stack.
 // an error state is returned if maxNestingDepth was exceeded, otherwise successState is returned.
-func (s *Scanner) pushParseState(c byte, newParseState int, successState int) int {
+func (s *Scanner) pushParseState(c byte, newParseState ParseState, successState int) int {
 	s.parseState = append(s.parseState, newParseState)
 	if len(s.parseState) <= maxNestingDepth {
 		return successState

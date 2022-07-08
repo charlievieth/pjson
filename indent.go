@@ -5,6 +5,7 @@
 package pjson
 
 import (
+	"bufio"
 	"bytes"
 )
 
@@ -59,9 +60,63 @@ func compact(dst *bytes.Buffer, src []byte, escape bool) error {
 	return nil
 }
 
-func newline(dst *bytes.Buffer, prefix, indent string, depth int) {
+const (
+	_s     = "                                                                " // 64
+	spaces = _s + _s + _s + _s + _s + _s + _s + _s                              // 512
+
+	// TOOD: remove tabs if not used
+	_t   = "\t\t\t\t\t\t\t\t"                    // 8
+	tabs = _t + _t + _t + _t + _t + _t + _t + _t // 64
+)
+
+// type indentMode int8
+//
+// const (
+// 	indentMixed indentMode = iota
+// 	indentSpaces
+// 	indentTabs
+// )
+
+func newline(dst *bytes.Buffer, prefix, indent string, depth int, allSpaces bool) {
 	dst.WriteByte('\n')
-	dst.WriteString(prefix)
+	if len(prefix) != 0 {
+		dst.WriteString(prefix)
+	}
+	if allSpaces {
+		n := len(indent) * depth
+		for n > 0 {
+			i := n
+			if i >= len(spaces) {
+				i = len(spaces)
+			}
+			dst.WriteString(spaces[:i])
+			n -= i
+		}
+		return
+	}
+	for i := 0; i < depth; i++ {
+		dst.WriteString(indent)
+	}
+}
+
+// TODO: use an interface for this
+func newlineBufio(dst *bufio.Writer, prefix, indent string, depth int, allSpaces bool) {
+	dst.WriteByte('\n')
+	if len(prefix) != 0 {
+		dst.WriteString(prefix)
+	}
+	if allSpaces {
+		n := len(indent) * depth
+		for n > 0 {
+			i := n
+			if i >= len(spaces) {
+				i = len(spaces)
+			}
+			dst.WriteString(spaces[:i])
+			n -= i
+		}
+		return
+	}
 	for i := 0; i < depth; i++ {
 		dst.WriteString(indent)
 	}
@@ -96,7 +151,7 @@ func Indent(dst *bytes.Buffer, src []byte, prefix, indent string) error {
 		if needIndent && v != ScanEndObject && v != ScanEndArray {
 			needIndent = false
 			depth++
-			newline(dst, prefix, indent, depth)
+			newline(dst, prefix, indent, depth, false)
 		}
 
 		// Emit semantically uninteresting bytes
@@ -115,7 +170,7 @@ func Indent(dst *bytes.Buffer, src []byte, prefix, indent string) error {
 
 		case ',':
 			dst.WriteByte(c)
-			newline(dst, prefix, indent, depth)
+			newline(dst, prefix, indent, depth, false)
 
 		case ':':
 			dst.WriteByte(c)
@@ -127,7 +182,7 @@ func Indent(dst *bytes.Buffer, src []byte, prefix, indent string) error {
 				needIndent = false
 			} else {
 				depth--
-				newline(dst, prefix, indent, depth)
+				newline(dst, prefix, indent, depth, false)
 			}
 			dst.WriteByte(c)
 

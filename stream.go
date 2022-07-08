@@ -87,7 +87,7 @@ func (dec *Decoder) Buffered() io.Reader {
 // readValue reads a JSON value into dec.buf.
 // It returns the length of the encoding.
 func (dec *Decoder) readValue() (int, error) {
-	dec.scan.reset()
+	dec.scan.Reset()
 
 	scanp := dec.scanp
 	var err error

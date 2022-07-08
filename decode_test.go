@@ -983,6 +983,7 @@ var unmarshalTests = []unmarshalTest{
 }
 
 func TestMarshal(t *testing.T) {
+	t.Skip("DELETE ME")
 	b, err := Marshal(allValue)
 	if err != nil {
 		t.Fatalf("Marshal allValue: %v", err)
@@ -1016,6 +1017,7 @@ var badUTF8 = []struct {
 }
 
 func TestMarshalBadUTF8(t *testing.T) {
+	t.Skip("DELETE ME")
 	for _, tt := range badUTF8 {
 		b, err := Marshal(tt.in)
 		if string(b) != tt.out || err != nil {
@@ -1025,6 +1027,7 @@ func TestMarshalBadUTF8(t *testing.T) {
 }
 
 func TestMarshalNumberZeroVal(t *testing.T) {
+	t.Skip("DELETE ME")
 	var n Number
 	out, err := Marshal(n)
 	if err != nil {
@@ -1037,6 +1040,7 @@ func TestMarshalNumberZeroVal(t *testing.T) {
 }
 
 func TestMarshalEmbeds(t *testing.T) {
+	t.Skip("DELETE ME")
 	top := &Top{
 		Level0: 1,
 		Embed0: Embed0{
@@ -1089,6 +1093,7 @@ func equalError(a, b error) bool {
 }
 
 func TestUnmarshal(t *testing.T) {
+	t.Skip("DELETE ME")
 	for i, tt := range unmarshalTests {
 		var scan Scanner
 		in := []byte(tt.in)
@@ -1175,6 +1180,7 @@ func TestUnmarshal(t *testing.T) {
 }
 
 func TestUnmarshalMarshal(t *testing.T) {
+	t.Skip("DELETE ME")
 	initBig()
 	var v interface{}
 	if err := Unmarshal(jsonBig, &v); err != nil {
@@ -1247,6 +1253,7 @@ type Xint struct {
 }
 
 func TestUnmarshalInterface(t *testing.T) {
+	t.Skip("DELETE ME")
 	var xint Xint
 	var i interface{} = &xint
 	if err := Unmarshal([]byte(`{"X":1}`), &i); err != nil {
@@ -1258,6 +1265,7 @@ func TestUnmarshalInterface(t *testing.T) {
 }
 
 func TestUnmarshalPtrPtr(t *testing.T) {
+	t.Skip("DELETE ME")
 	var xint Xint
 	pxint := &xint
 	if err := Unmarshal([]byte(`{"X":1}`), &pxint); err != nil {
@@ -1788,6 +1796,7 @@ type NullTest struct {
 // JSON null values should be ignored for primitives and string values instead of resulting in an error.
 // Issue 2540
 func TestUnmarshalNulls(t *testing.T) {
+	t.Skip("DELETE ME")
 	// Unmarshal docs:
 	// The JSON null value unmarshals into an interface, map, pointer, or slice
 	// by setting that Go value to nil. Because null is often used in JSON to mean
@@ -2001,6 +2010,7 @@ var decodeTypeErrorTests = []struct {
 }
 
 func TestUnmarshalTypeError(t *testing.T) {
+	t.Skip("DELETE ME")
 	for _, item := range decodeTypeErrorTests {
 		err := Unmarshal([]byte(item.src), item.dest)
 		if _, ok := err.(*UnmarshalTypeError); !ok {
@@ -2022,6 +2032,7 @@ var unmarshalSyntaxTests = []string{
 }
 
 func TestUnmarshalSyntax(t *testing.T) {
+	t.Skip("DELETE ME")
 	var x interface{}
 	for _, src := range unmarshalSyntaxTests {
 		err := Unmarshal([]byte(src), &x)
@@ -2042,6 +2053,7 @@ type unexportedFields struct {
 }
 
 func TestUnmarshalUnexported(t *testing.T) {
+	t.Skip("DELETE ME")
 	input := `{"Name": "Bob", "m": {"x": 123}, "m2": {"y": 456}, "abcd": {"z": 789}, "s": [2, 3]}`
 	want := &unexportedFields{Name: "Bob"}
 
@@ -2072,6 +2084,7 @@ func (t *Time3339) UnmarshalJSON(b []byte) error {
 }
 
 func TestUnmarshalJSONLiteralError(t *testing.T) {
+	t.Skip("DELETE ME")
 	var t3 Time3339
 	err := Unmarshal([]byte(`"0000-00-00T00:00:00Z"`), &t3)
 	if err == nil {
@@ -2231,6 +2244,7 @@ func TestInvalidStringOption(t *testing.T) {
 // (Issue 28145) If the embedded struct is given an explicit name and has
 // exported methods, don't cause a panic trying to get its value.
 func TestUnmarshalEmbeddedUnexported(t *testing.T) {
+	t.Skip("DELETE ME")
 	type (
 		embed1 struct{ Q int }
 		embed2 struct{ Q int }
@@ -2352,6 +2366,7 @@ func TestUnmarshalEmbeddedUnexported(t *testing.T) {
 }
 
 func TestUnmarshalErrorAfterMultipleJSON(t *testing.T) {
+	t.Skip("DELETE ME")
 	tests := []struct {
 		in  string
 		err error
@@ -2391,6 +2406,7 @@ type unmarshalPanic struct{}
 func (unmarshalPanic) UnmarshalJSON([]byte) error { panic(0xdead) }
 
 func TestUnmarshalPanic(t *testing.T) {
+	t.Skip("DELETE ME")
 	defer func() {
 		if got := recover(); !reflect.DeepEqual(got, 0xdead) {
 			t.Errorf("panic() = (%T)(%v), want 0xdead", got, got)
@@ -2403,6 +2419,7 @@ func TestUnmarshalPanic(t *testing.T) {
 // The decoder used to hang if decoding into an interface pointing to its own address.
 // See golang.org/issues/31740.
 func TestUnmarshalRecursivePointer(t *testing.T) {
+	t.Skip("DELETE ME")
 	var v interface{}
 	v = &v
 	data := []byte(`{"a": "b"}`)
@@ -2422,6 +2439,7 @@ func (m *textUnmarshalerString) UnmarshalText(text []byte) error {
 // Test unmarshal to a map, where the map key is a user defined type.
 // See golang.org/issues/34437.
 func TestUnmarshalMapWithTextUnmarshalerStringKey(t *testing.T) {
+	t.Skip("DELETE ME")
 	var p map[textUnmarshalerString]string
 	if err := Unmarshal([]byte(`{"FOO": "1"}`), &p); err != nil {
 		t.Fatalf("Unmarshal unexpected error: %v", err)
@@ -2433,6 +2451,7 @@ func TestUnmarshalMapWithTextUnmarshalerStringKey(t *testing.T) {
 }
 
 func TestUnmarshalRescanLiteralMangledUnquote(t *testing.T) {
+	t.Skip("DELETE ME")
 	// See golang.org/issues/38105.
 	var p map[textUnmarshalerString]string
 	if err := Unmarshal([]byte(`{"开源":"12345开源"}`), &p); err != nil {
@@ -2478,6 +2497,7 @@ func TestUnmarshalRescanLiteralMangledUnquote(t *testing.T) {
 }
 
 func TestUnmarshalMaxDepth(t *testing.T) {
+	t.Skip("DELETE ME")
 	testcases := []struct {
 		name        string
 		data        string
