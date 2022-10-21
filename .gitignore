@@ -1,1 +1,4 @@
 /bin
+/vendor
+*.out
+*.test
