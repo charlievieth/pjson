@@ -1,0 +1,15 @@
+{
+    "ArrayNumeric": [
+        1,
+        2,
+        3
+    ],
+    "ArrayString": [
+        "v1",
+        "v2"
+    ],
+    "BoolFalse": false,
+    "BoolTrue": true,
+    "Null": null,
+    "Numeric": 123456
+}
