@@ -64,7 +64,6 @@ func goldenTestInit() {
 func (test *goldenTest) Run(t *testing.T, fn func(*bytes.Buffer, []byte) error) {
 	t.Run(test.name, func(t *testing.T) {
 		var dst bytes.Buffer
-		dst.Reset()
 		if err := fn(&dst, test.in); err != nil {
 			t.Fatal(err)
 		}
@@ -138,6 +137,9 @@ func testIndentConfigIndentGolden(t *testing.T, streamTest bool, fn func(*Indent
 		if streamRe.MatchString(test.name) && !streamTest {
 			continue
 		}
+		if streamTest {
+			test.want = append(test.want, '\n')
+		}
 		test.Run(t, func(dst *bytes.Buffer, data []byte) error {
 			return fn(conf, dst, data)
 		})
@@ -155,8 +157,10 @@ func TestIndentConfigStream(t *testing.T) {
 	fn := func(conf *IndentConfig, dst *bytes.Buffer, data []byte) error {
 		s := NewStream(bytes.NewReader(data), conf)
 		s.SetIndent("", "    ")
-		_, err := s.Indent(dst)
-		return err
+		if _, err := s.Indent(dst); err != nil && err != io.EOF {
+			return err
+		}
+		return nil
 		// for {
 		// 	_, err := s.Indent(dst)
 		// 	if err != nil {
@@ -704,4 +708,68 @@ func BenchmarkIndentConfigIndent_Compact(b *testing.B) {
 			json.Compact(&dst, codeJSON)
 		}
 	})
+}
+
+type streamReader struct {
+	r    bytes.Reader
+	data []byte
+}
+
+func newStreamReader(p []byte) *streamReader {
+	n := len(p)
+	data := make([]byte, n, n+1)
+	copy(data, p)
+	if n > 0 && data[n-1] != '\n' {
+		data = append(data, '\n')
+	}
+	r := &streamReader{data: data}
+	r.r.Reset(r.data)
+	return r
+}
+
+func (r *streamReader) Read(p []byte) (int, error) {
+	n, err := r.r.Read(p)
+	if err == io.EOF {
+		r.r.Reset(r.data)
+		err = nil
+	}
+	return n, err
+}
+
+func benchmarkStreamNext(b *testing.B, data []byte) {
+	b.ReportAllocs()
+
+	b.SetBytes(int64(len(data)))
+	conf := DefaultIndentConfig
+	stream := NewStream(newStreamReader(data), &conf)
+	stream.SetIndent("", "    ")
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := stream.Next()
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}
+
+func BenchmarkStreamNext(b *testing.B) {
+	if codeJSON == nil {
+		b.StopTimer()
+		codeInit()
+		b.StartTimer()
+	}
+	benchmarkStreamNext(b, codeJSON)
+}
+
+func BenchmarkStreamNext_Simple(b *testing.B) {
+	data, err := json.Marshal(map[string]int{
+		"key1": 1,
+		"key2": 2,
+		"key3": 3,
+	})
+	if err != nil {
+		b.Fatal(err)
+	}
+	benchmarkStreamNext(b, data)
 }

@@ -608,21 +608,32 @@ func (conf *IndentConfig) Compact(dst *bytes.Buffer, src []byte) error {
 }
 
 type Stream struct {
-	r       *bufio.Reader // TODO: lazily setup Reader?
-	scan    *Scanner
+	// WARN: just use an io.Reader
+	r *bufio.Reader // TODO: lazily setup Reader?
+
+	scan    *Scanner // TODO: don't use a pointer
 	conf    *IndentConfig
+	buf     []byte
+	scanp   int   // start of unread data in buf
 	scanned int64 // amount of data already scanned
+	scratch bytes.Buffer
 	indent  string
 	prefix  string
 	newline string // WARN: use or remove
 	err     error
 }
 
+// TODO: swap arg positions
 func NewStream(rd io.Reader, conf *IndentConfig) *Stream {
-	r := bufioReaderPool.Get().(*bufio.Reader)
-	r.Reset(rd)
+	// r := bufioReaderPool.Get().(*bufio.Reader)
+	// r.Reset(rd)
 	dupe := *conf
-	return &Stream{r: r, scan: newScanner(), conf: &dupe, newline: "\n"}
+	return &Stream{
+		r:       bufio.NewReader(rd),
+		scan:    newScanner(),
+		conf:    &dupe,
+		newline: "\n",
+	}
 }
 
 func (s *Stream) SetConfig(conf *IndentConfig) {
@@ -648,9 +659,146 @@ func (s *Stream) WriteTo(wr io.Writer) (int64, error) {
 	panic("implement")
 }
 
+func (dec *Stream) refill() error {
+	// Make room to read more into the buffer.
+	// First slide down data already consumed.
+	if dec.scanp > 0 {
+		dec.scanned += int64(dec.scanp)
+		n := copy(dec.buf, dec.buf[dec.scanp:])
+		dec.buf = dec.buf[:n]
+		dec.scanp = 0
+	}
+
+	// Grow buffer if not large enough.
+	const minRead = 512
+	if cap(dec.buf)-len(dec.buf) < minRead {
+		newBuf := make([]byte, len(dec.buf), 2*cap(dec.buf)+minRead)
+		copy(newBuf, dec.buf)
+		dec.buf = newBuf
+	}
+
+	// Read. Delay error for next iteration (after scan).
+	n, err := dec.r.Read(dec.buf[len(dec.buf):cap(dec.buf)])
+	dec.buf = dec.buf[0 : len(dec.buf)+n]
+
+	return err
+}
+
+// readValue reads a JSON value into dec.buf.
+// It returns the length of the encoding.
+func (dec *Stream) readValue() (int, error) {
+	dec.scan.Reset()
+
+	scanp := dec.scanp
+	var err error
+Input:
+	// help the compiler see that scanp is never negative, so it can remove
+	// some bounds checks below.
+	for scanp >= 0 {
+
+		// Look in the buffer for a new value.
+		for ; scanp < len(dec.buf); scanp++ {
+			c := dec.buf[scanp]
+			dec.scan.bytes++
+			switch dec.scan.step(dec.scan, c) {
+			case ScanEnd:
+				// scanEnd is delayed one byte so we decrement
+				// the scanner bytes count by 1 to ensure that
+				// this value is correct in the next call of Decode.
+				dec.scan.bytes--
+				break Input
+			case ScanEndObject, ScanEndArray:
+				// scanEnd is delayed one byte.
+				// We might block trying to get that byte from src,
+				// so instead invent a space byte.
+				if stateEndValue(dec.scan, ' ') == ScanEnd {
+					scanp++
+					break Input
+				}
+			case ScanError:
+				dec.err = dec.scan.err
+				return 0, dec.scan.err
+			}
+		}
+
+		// Did the last read have an error?
+		// Delayed until now to allow buffer scan.
+		if err != nil {
+			if err == io.EOF {
+				if dec.scan.step(dec.scan, ' ') == ScanEnd {
+					break Input
+				}
+				if nonSpace(dec.buf) {
+					err = io.ErrUnexpectedEOF
+				}
+			}
+			dec.err = err
+			return 0, err
+		}
+
+		n := scanp - dec.scanp
+		err = dec.refill()
+		scanp = dec.scanp + n
+	}
+	return scanp - dec.scanp, nil
+}
+
+// WARN: rename
+func (s *Stream) Next() ([]byte, error) {
+	if s.err != nil {
+		return nil, s.err
+	}
+
+	// WARN WARN WARN WARN WARN WARN WARN
+	// if err := dec.tokenPrepareForDecode(); err != nil {
+	// 	return err
+	// }
+	// WARN WARN WARN WARN WARN WARN WARN
+
+	n, err := s.readValue()
+	if err != nil {
+		return nil, err
+	}
+	val := s.buf[s.scanp : s.scanp+n]
+	s.scanp += n
+
+	s.scratch.Reset()
+	if err := s.conf.Indent(&s.scratch, val, s.prefix, s.indent); err != nil {
+		// panic(fmt.Sprintf("error: %v n: %d scanp: %d\n###\n%q\n###", err, n, s.scanp, val))
+		return nil, err
+	}
+	s.scratch.WriteByte('\n')
+	out := make([]byte, s.scratch.Len())
+	copy(out, s.scratch.Bytes())
+	return out, nil
+}
+
+func (s *Stream) Indent(wr io.Writer) (int, error) {
+	if s.err != nil {
+		return 0, s.err
+	}
+
+	var nn int // WARN: use an int64
+	for i := 0; ; i++ {
+		b, err := s.Next()
+		if err != nil {
+			return nn, err
+		}
+		n, err := wr.Write(b)
+		nn += n
+		if err != nil {
+			return nn, err
+		}
+		if i > 1000 {
+			panic("WAT")
+		}
+	}
+	return nn, nil
+}
+
 // WARN: make sure we return io.EOF
 // WARN: what is the right signature for this?
-func (s *Stream) Indent(wr io.Writer) (int, error) {
+func (s *Stream) IndentOld(wr io.Writer) (int, error) {
 	if s.err != nil {
 		return 0, s.err
 	}
