@@ -13,22 +13,18 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var _ = pjson.Encoder{}
-
-func openFile(name string) (*os.File, func() error, error) {
-	if name == "-" {
-		return os.Stdin, func() error { return nil }, nil
-	}
-	f, err := os.Open(name)
-	if err != nil {
-		return nil, nil, err
-	}
-	return f, f.Close, err
+type statReader struct {
+	f *os.File
+	n int64
 }
 
-var newLine = []byte{'\n'}
+func (r *statReader) Read(p []byte) (int, error) {
+	n, err := r.f.Read(p)
+	r.n += int64(n)
+	return n, err
+}
 
-func streamFile(name string, stream *pjson.Stream, wr *bufio.Writer) (read, written int64, _ error) {
+func streamFile(name string, stream *pjson.Stream, wr *bufio.Writer) (read, written int64, err error) {
 	f, err := os.Open(name)
 	if err != nil {
 		return 0, 0, err
@@ -56,16 +52,16 @@ const statsFormat = `
 
 func main() {
 	root := cobra.Command{
-		Short: "pjson",
+		Use: "pjson [flags] [file]...",
 	}
 	flags := root.Flags()
-	indentCount := flags.Int("indent", 4, "Use the given number of spaces (no more than 8) for indentation.")
+	indentCount := flags.Int("indent", 4, "Use the given number of spaces for indentation.")
 	compact := flags.BoolP("compact", "c", false, "Compact JSON output")
 	printStats := flags.Bool("stats", false, "Print stats to STDERR.")
 	forceColor := flags.BoolP("color", "C", false,
-		"By default, pjson outputs colored JSON if writing to a terminal. "+
-			"You can force it to produce color even if writing to "+
-			"a pipe or a file using -C, and disable color with -M.")
+		"By default, pjson outputs colored JSON if writing to a terminal.\n"+
+			"You can force it to produce color even if writing to a pipe or a\n"+
+			"file using -C, and disable color with -M.")
 
 	root.RunE = func(cmd *cobra.Command, args []string) error {
 		var conf pjson.IndentConfig
@@ -84,16 +80,34 @@ func main() {
 			return errors.New("compact not supported")
 		}
 
+		start := time.Now()
 		stream := pjson.NewStream(nil, &conf)
 		stream.SetIndent("", indent)
 
+		statsFn := func(nr, nw int64) {
+			if *printStats {
+				d := time.Since(start)
+				mbr := float64(nr) / float64(1024*1024)
+				mbw := float64(nw) / float64(1024*1024)
+				fmt.Fprintf(os.Stderr, statsFormat,
+					d,
+					mbr, mbr/d.Seconds(),
+					mbw, mbw/d.Seconds(),
+				)
+			}
+		}
+
 		if len(args) == 0 {
-			stream.Reset(os.Stdin)
-			_, err := stream.WriteTo(os.Stdout)
+			sr := statReader{f: os.Stdin}
+			stream.Reset(&sr)
+			nw, err := stream.WriteTo(os.Stdout)
+			if err != nil {
+				return err
+			}
+			statsFn(sr.n, nw)
 			return err
 		}
 
-		start := time.Now()
 		var read, written int64
 		out := bufio.NewWriterSize(os.Stdout, 96*1024)
 		for _, name := range args {
@@ -108,16 +122,7 @@ func main() {
 		if err := out.Flush(); err != nil {
 			return err
 		}
-		if *printStats {
-			d := time.Since(start)
-			mbr := float64(read) / float64(1024*1024)
-			mbw := float64(written) / float64(1024*1024)
-			fmt.Fprintf(os.Stderr, statsFormat,
-				d,
-				mbr, mbr/d.Seconds(),
-				mbw, mbw/d.Seconds(),
-			)
-		}
+		statsFn(read, written)
 		return nil
 	}
 
