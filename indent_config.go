@@ -3,6 +3,7 @@ package pjson
 import (
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -611,8 +612,8 @@ type Stream struct {
 	// WARN: just use an io.Reader
 	r *bufio.Reader // TODO: lazily setup Reader?
 
-	scan    *Scanner // TODO: don't use a pointer
-	conf    *IndentConfig
+	scan    *Scanner      // TODO: don't use a pointer
+	conf    *IndentConfig // TODO: move to end of struct
 	buf     []byte
 	scanp   int   // start of unread data in buf
 	scanned int64 // amount of data already scanned
@@ -636,6 +637,16 @@ func NewStream(rd io.Reader, conf *IndentConfig) *Stream {
 	}
 }
 
+func (s *Stream) Reset(rd io.Reader) {
+	s.r.Reset(rd)
+	s.scan.Reset()
+	s.buf = s.buf[:0]
+	s.scanp = 0
+	s.scanned = 0
+	s.scratch.Reset()
+	s.err = nil
+}
+
 func (s *Stream) SetConfig(conf *IndentConfig) {
 	if conf == nil {
 		panic("pjson: nil IndentConfig")
@@ -653,10 +664,6 @@ func (s *Stream) SetIndent(prefix, indent string) {
 
 func (s *Stream) SetNewline(newline string) {
 	s.newline = newline
-}
-
-func (s *Stream) WriteTo(wr io.Writer) (int64, error) {
-	panic("implement")
 }
 
 func (dec *Stream) refill() error {
@@ -773,31 +780,39 @@ func (s *Stream) Next() ([]byte, error) {
 	return out, nil
 }
 
-func (s *Stream) Indent(wr io.Writer) (int, error) {
+func (s *Stream) EOF() bool { return errors.Is(s.err, io.EOF) }
+
+// WARN: don't return EOF
+func (s *Stream) WriteTo(wr io.Writer) (nn int64, err error) {
 	if s.err != nil {
 		return 0, s.err
 	}
-
-	var nn int // WARN: use an int64
-	for i := 0; ; i++ {
-		b, err := s.Next()
-		if err != nil {
-			return nn, err
+	// var nn int64 // WARN: use an int64
+	for {
+		b, en := s.Next()
+		if en != nil {
+			if en != io.EOF {
+				err = en
+				s.err = en
+			}
+			break
 		}
-		n, err := wr.Write(b)
-		nn += n
-		if err != nil {
-			return nn, err
+		n, ew := wr.Write(b)
+		nn += int64(n)
+		if ew == nil && n < len(b) {
+			ew = io.ErrShortWrite
 		}
-		if i > 1000 {
-			panic("WAT")
+		if ew != nil {
+			err = ew
+			break
 		}
 	}
-	return nn, nil
+	return nn, err
 }
 
 // WARN: make sure we return io.EOF
 // WARN: what is the right signature for this?
+/*
 func (s *Stream) IndentOld(wr io.Writer) (int, error) {
 	if s.err != nil {
 		return 0, s.err
@@ -967,23 +982,24 @@ func (s *Stream) IndentOld(wr io.Writer) (int, error) {
 	}
 	return 0, nil
 }
+*/
 
-func (s *Stream) Close() error {
-	if s.r != nil {
-		s.r.Reset(nil)
-		bufioReaderPool.Put(s.r)
-		s.r = nil
-	}
-	if s.scan != nil {
-		freeScanner(s.scan)
-		s.scan = nil
-	}
-	// TODO: error if already closed?
-	if s.err != nil {
-		return s.err
-	}
-	return nil
-}
+// func (s *Stream) Close() error {
+// 	if s.r != nil {
+// 		s.r.Reset(nil)
+// 		bufioReaderPool.Put(s.r)
+// 		s.r = nil
+// 	}
+// 	if s.scan != nil {
+// 		freeScanner(s.scan)
+// 		s.scan = nil
+// 	}
+// 	// TODO: error if already closed?
+// 	if s.err != nil {
+// 		return s.err
+// 	}
+// 	return nil
+// }
 
 func RGBToAnsi256(r, g, b int) int {
 	if r == g && g == b {

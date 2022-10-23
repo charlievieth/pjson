@@ -29,6 +29,7 @@ func TestSpaceConstant(t *testing.T) {
 
 type goldenTest struct {
 	name     string
+	path     string
 	in, want []byte
 }
 
@@ -40,6 +41,9 @@ func goldenTestInit() {
 		paths, err := filepath.Glob("testdata/golden_tests/*.json")
 		if err != nil {
 			panic(err)
+		}
+		if len(paths) == 0 {
+			panic("found 0 golden tests!")
 		}
 		sort.Strings(paths)
 		for _, path := range paths {
@@ -54,8 +58,9 @@ func goldenTestInit() {
 			}
 			goldenTests = append(goldenTests, goldenTest{
 				name: name,
+				path: path,
 				in:   in,
-				want: bytes.TrimRight(want, "\n"), // WARN: remove trailing newline
+				want: want,
 			})
 		}
 	})
@@ -137,9 +142,6 @@ func testIndentConfigIndentGolden(t *testing.T, streamTest bool, fn func(*Indent
 		if streamRe.MatchString(test.name) && !streamTest {
 			continue
 		}
-		if streamTest {
-			test.want = append(test.want, '\n')
-		}
 		test.Run(t, func(dst *bytes.Buffer, data []byte) error {
 			return fn(conf, dst, data)
 		})
@@ -153,11 +155,44 @@ func TestIndentConfigIndent(t *testing.T) {
 	testIndentConfigIndentGolden(t, false, fn)
 }
 
+// WARN: this is just to make sure we match Go's indentation
+func TestIndentConfigIndentNoColor(t *testing.T) {
+	goldenTestInit()
+	streamRe := regexp.MustCompile(`^\d+_stream_`)
+
+	var conf IndentConfig
+	var dst1 bytes.Buffer
+	var dst2 bytes.Buffer
+	for _, test := range goldenTests {
+		if streamRe.MatchString(test.name) {
+			continue
+		}
+		data, err := os.ReadFile(test.path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		dst1.Reset()
+		if err := json.Compact(&dst1, bytes.TrimSpace(data)); err != nil {
+			t.Fatal(err)
+		}
+		src := append([]byte(nil), dst1.Bytes()...)
+		dst1.Reset()
+		if err := json.Indent(&dst1, src, "", "    "); err != nil {
+			t.Fatal(err)
+		}
+		dst2.Reset()
+		if err := conf.Indent(&dst2, src, "", "    "); err != nil {
+			t.Fatal(err)
+		}
+		compareJSON(t, dst2.String(), dst1.String())
+	}
+}
+
 func TestIndentConfigStream(t *testing.T) {
 	fn := func(conf *IndentConfig, dst *bytes.Buffer, data []byte) error {
 		s := NewStream(bytes.NewReader(data), conf)
 		s.SetIndent("", "    ")
-		if _, err := s.Indent(dst); err != nil && err != io.EOF {
+		if _, err := s.WriteTo(dst); err != nil {
 			return err
 		}
 		return nil
